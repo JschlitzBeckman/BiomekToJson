@@ -14,6 +14,9 @@ namespace BiomekToJson
   {
     private const string TYPE_KEY = "$type";
     private const string VALUE_KEY = "$value";
+    private const string EEOR_NAME = "Eeor";
+    private const string VARIANT_LIST_NAME = "VariantList";
+    private const string DATE_NAME = "Date";
 
     private static readonly JsonSerializerOptions JSO = new JsonSerializerOptions
     {
@@ -101,7 +104,8 @@ namespace BiomekToJson
 
       var asString = root.ToJsonString(JSO);
       Console.WriteLine(asString);
-      //Can we round trip? ... TODO: No. No we can't. Well, I don't care about decimal vs. double
+      //Can we round trip? ... Sorta. decimals get squished to doubles. all int types become ints.
+      //TODO: Dates become strings, which I should deal with.
       Eeor roundTrip = ProcessJsEeor((JsonObject)JsonNode.Parse(asString, JNO));
 
 
@@ -149,10 +153,12 @@ namespace BiomekToJson
           case JsonValueKind.Object:
             var jo = kvp.Value.AsObject();
             var theType = jo[TYPE_KEY].GetValue<string>();
-            if (theType == "Eeor")
+            if (theType == EEOR_NAME)
               result.Put(kvp.Key, ProcessJsEeor(jo));
-            else if (theType == "VariantList")
+            else if (theType == VARIANT_LIST_NAME)
               result.Put(kvp.Key, ProcessJsVariantList(jo));
+            else if (theType == DATE_NAME)
+              result.PutDate(kvp.Key, jo[VALUE_KEY].GetValue<DateTime>());
             else
               throw new Exception($"{kvp.Key} is a bad object for {theObject.ToJsonString()}");
             break;
@@ -194,7 +200,7 @@ namespace BiomekToJson
 
     private static JsonObject ProcessEeor(Eeor eeor)
     {
-      var result = new JsonObject(JNO) { { TYPE_KEY, JsonValue.Create("Eeor", JNO) } };
+      var result = new JsonObject(JNO) { { TYPE_KEY, JsonValue.Create(EEOR_NAME, JNO) } };
 
       //Getting it to write a double like 612.0 is a pain. It will write 612.0 as 612, which will be read as an int.
       foreach (var k in eeor.GetAllDoubleKeys())
@@ -209,8 +215,6 @@ namespace BiomekToJson
         result.Add(k, JsonValue.Create(eeor.GetShort(k), JNO));
       foreach (var k in eeor.GetAllBooleanKeys())
         result.Add(k, JsonValue.Create(eeor.GetBool(k), JNO));
-      foreach (var k in eeor.GetAllDateKeys())
-        result.Add(k, JsonValue.Create(eeor.GetDate(k), JNO));
       foreach (var k in eeor.GetAllByteKeys())
         result.Add(k, JsonValue.Create(eeor.GetByte(k), JNO));
       foreach (var k in eeor.GetAllArrayKeys())
@@ -228,6 +232,16 @@ namespace BiomekToJson
       foreach (var k in eeor.GetAllEmptyKeys())
         result.Add(k, null);
 
+      foreach (var k in eeor.GetAllDateKeys())
+      {
+        var dateObject = new JsonObject(JNO)
+        {
+          { TYPE_KEY, JsonValue.Create(DATE_NAME, JNO) },
+          { VALUE_KEY, JsonValue.Create(eeor.GetDate(k), JNO) }
+        };
+        result.Add(k, dateObject);
+      }
+
       foreach (var k in eeor.GetAllDictionaryKeys())
         result.Add(k, ProcessEeor(eeor.GetDictionary(k)));
 
@@ -244,7 +258,7 @@ namespace BiomekToJson
       var innerArray = new JsonArray(JNO);
       var result = new JsonObject(JNO)
       {
-        { TYPE_KEY, JsonValue.Create("VariantList", JNO) },
+        { TYPE_KEY, JsonValue.Create(VARIANT_LIST_NAME, JNO) },
         { VALUE_KEY, innerArray }
       };
       foreach (var item in vl)
