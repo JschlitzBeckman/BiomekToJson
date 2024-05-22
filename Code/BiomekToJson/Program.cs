@@ -1,5 +1,6 @@
 ﻿using OthrosNet;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -100,12 +101,13 @@ namespace BiomekToJson
 
       #endregion
 
+      //TODO: consider using a breadth-first search to serialize the information and prevent cycles
+      //TODO: as I go through the graph, can the references to previous objects be the json path instead of some id?
       var root = ProcessEeor(test);
 
       var asString = root.ToJsonString(JSO);
       Console.WriteLine(asString);
       //Can we round trip? ... Sorta. decimals get squished to doubles. all int types become ints.
-      //TODO: Dates become strings, which I should deal with.
       Eeor roundTrip = ProcessJsEeor((JsonObject)JsonNode.Parse(asString, JNO));
 
 
@@ -188,8 +190,90 @@ namespace BiomekToJson
 
     private static Array ProcessJsArray(JsonArray asArray)
     {
-      //TODO...
-      return Array.CreateInstance(typeof(string), 3);
+      //TODO: should I just give this up and turn everything into an object[]?
+      if (!asArray.Any())
+        return Array.Empty<object>();
+
+      var arr = Array.CreateInstance(GetArrType(asArray), asArray.Count);
+
+      for (var i = 0; i < asArray.Count; i++)
+      {
+        switch (asArray[i].GetValueKind())
+        {
+          case JsonValueKind.String:
+            arr.SetValue(asArray[i].AsValue().GetValue<string>(), i);
+            break;
+          case JsonValueKind.Number:
+            if (asArray[i].AsValue().TryGetValue<int>(out var x))
+              arr.SetValue(x, i);
+            else
+              arr.SetValue(asArray[i].AsValue().GetValue<double>(), i);
+            break;
+          case JsonValueKind.True:
+            arr.SetValue(true, i);
+            break;
+          case JsonValueKind.False:
+            arr.SetValue(true, i);
+            break;
+          case JsonValueKind.Null:
+            arr.SetValue(null, i);
+            break;
+          case JsonValueKind.Object:
+            arr.SetValue(ProcessJsEeor(asArray[i].AsObject()), i);
+            break;
+          case JsonValueKind.Array:
+            arr.SetValue(ProcessJsArray(asArray[i].AsArray()), i);
+            break;
+          default:
+            throw new ArgumentOutOfRangeException();
+        }
+      }
+
+      return arr;
+    }
+
+    private static Type GetArrType(JsonArray asArray)
+    {
+      if (!asArray.Any()) return typeof(object);
+
+      var theVk = asArray.First().GetValueKind();
+      if (theVk == JsonValueKind.Object || theVk == JsonValueKind.Undefined)
+        return typeof(object);
+
+      var isInt = false;
+      if (theVk == JsonValueKind.Number)
+        isInt = asArray.First().AsValue().TryGetValue<int>(out _);
+
+      //If we somehow have a mix, just be an object
+      for (var i = 1; i < asArray.Count(); i++)
+      {
+        var vk = asArray[i].GetValueKind();
+        if (vk != theVk)
+          return typeof(object);
+        if (isInt && vk == JsonValueKind.Number)
+          isInt = asArray[i].AsValue().TryGetValue<int>(out _);
+      }
+
+      switch (theVk)
+      {
+        case JsonValueKind.Undefined:
+        case JsonValueKind.Object:
+        case JsonValueKind.Null:
+          return typeof(object);
+        case JsonValueKind.Array:
+          //Well this is convoluted.
+          var x = Array.CreateInstance(GetArrType(asArray.First().AsArray()), 0);
+          return x.GetType();
+        case JsonValueKind.String:
+          return typeof(string);
+        case JsonValueKind.Number:
+          return isInt ? typeof(int) : typeof(double);
+        case JsonValueKind.True:
+        case JsonValueKind.False:
+          return typeof(bool);
+        default:
+          throw new ArgumentOutOfRangeException();
+      }
     }
 
     private static VariantList ProcessJsVariantList(JsonObject jo)
@@ -226,7 +310,6 @@ namespace BiomekToJson
       foreach (var k in eeor.GetAllStringKeys())
         result.Add(k, JsonValue.Create(eeor.GetString(k), JNO));
 
-      //TODO ???
       foreach (var k in eeor.GetAllNullKeys())
         result.Add(k, null);
       foreach (var k in eeor.GetAllEmptyKeys())
