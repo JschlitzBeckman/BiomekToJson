@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using System.Xml;
+using OthrosCommonLib;
 
 namespace BiomekToJson
 {
@@ -36,7 +37,6 @@ namespace BiomekToJson
 
     static void Main(string[] args)
     {
-
       var test = new Eeor() ;
       test.Put("Hello", "World!");
       test.Put("int", 413);
