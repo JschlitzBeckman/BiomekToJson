@@ -57,7 +57,7 @@ namespace BiomekToJson
 
       var tmp = new Eeor();
       tmp.Put("Wibble", "Wobble");
-      test.Put("List", new VariantList { "Foo", 123, 45.6, tmp, null });
+      test.Put("List", new VariantList { "Foo", 123, 45.6, tmp, null, DateTime.Today, new[]{"array", "in", "a", "list"}, new Eeor(), new VariantList(){8576309} });
       test.Put(":", ":");
 
       #region Things that don't work
@@ -186,7 +186,6 @@ namespace BiomekToJson
 
     private static Array ProcessJsArray(JsonArray asArray)
     {
-      //TODO: should I just give this up and turn everything into an object[]?
       if (!asArray.Any())
         return Array.Empty<object>();
 
@@ -194,6 +193,11 @@ namespace BiomekToJson
 
       for (var i = 0; i < asArray.Count; i++)
       {
+        if (asArray[i] == null)
+        {
+          arr.SetValue(null, i);
+          continue;
+        }
         switch (asArray[i].GetValueKind())
         {
           case JsonValueKind.String:
@@ -299,10 +303,58 @@ namespace BiomekToJson
       }
     }
 
-    private static VariantList ProcessJsVariantList(JsonObject jo)
+    private static VariantList ProcessJsVariantList(JsonObject jObjVariantList)
     {
-      //TODO
-      return new VariantList();
+      var result = new VariantList();
+      foreach (var jn in jObjVariantList[VALUE_KEY].AsArray())
+      {
+        if (jn == null)
+        {
+          result.Add(null);
+          continue;
+        }
+        switch (jn.GetValueKind())
+        {
+          case JsonValueKind.String:
+            result.Add(jn.AsValue().GetValue<string>());
+            break;
+          case JsonValueKind.Number:
+            var jv = jn.AsValue();
+            if (jv.TryGetValue<int>(out var i))
+              result.Add(i);
+            else
+              result.Add(jv.GetValue<double>());
+            break;
+          case JsonValueKind.Null: //Can't really get here
+            result.Add(null);
+            break;
+          case JsonValueKind.Object:
+            var jo = jn.AsObject();
+            var theType = jo[TYPE_KEY].GetValue<string>();
+            switch (theType)
+            {
+              case EEOR_NAME:
+                result.Add(ProcessJsEeor(jo));
+                break;
+              case VARIANT_LIST_NAME:
+                result.Add(ProcessJsVariantList(jo));
+                break;
+              case DATE_NAME:
+                result.Add(jo[VALUE_KEY].GetValue<DateTime>());
+                break;
+              default:
+                throw new Exception($"Unable to interpret {jn.ToJsonString()} from {jObjVariantList.ToJsonString()}.");
+            }
+            break;
+          case JsonValueKind.Array:
+            result.Add(ProcessJsArray(jn.AsArray()));
+            break;
+          default:
+            throw new ArgumentOutOfRangeException();
+        }
+      } 
+
+      return result;
     }
 
     private static JsonObject ProcessEeor(Eeor eeor)
