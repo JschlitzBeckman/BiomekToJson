@@ -60,70 +60,22 @@ namespace BiomekToJson
       test.Put("List", new VariantList { "Foo", 123, 45.6, tmp, null, DateTime.Today, new[]{"array", "in", "a", "list"}, new Eeor(), new VariantList(){8576309} });
       test.Put(":", ":");
 
-      #region Things that don't work
-
-      //Creates a nested Array, no key names
-      //var simple = JsonConvert.SerializeObject(eeor, Formatting.Indented);
-      //Console.WriteLine(simple);
-
-      //As above, but no indentation.
-      //JsonSerializer serializer = new JsonSerializer { NullValueHandling = NullValueHandling.Ignore };
-      //var stringStream = new StringWriter();
-      //serializer.Serialize(stringStream, eeor);
-      //Console.WriteLine(stringStream.ToString());
-
-      //https://signavio.github.io/tech-blog/2017/json-type-information
-      //https://www.codeproject.com/Articles/5284591/Adding-type-to-System-Text-Json-Serialization-like
-
-
-      //I don't think I can writte sensible desrializers, since I don't know what I've got until I start examining it, 
-      //and it seems that it is strictly step-forward with each token. 
-      //but for writing...? I'd still need to use JsonConverterFactory since I don't know the type of the value until I look more closely 
-      //options.Converters.Add(new EeorConverter());
-      //options.Converters.Add(new VlConverter());
-      //var str = JsonSerializer.Serialize(eeor, options);
-      //Console.WriteLine(str);
-
-      /* I could serialize the type information into the JSON, get it, and then deserialize the object with that type info.
-       * This is a 2x cost, and I don't know if it jibes with the JsonConverter approach.
-       *
-       * There are callbacks for stages of serialization/deserialization. Ah, but you put them on the object you're serializing/desrializing
-       *
-       * Do we wrap VD & VL in custom types? ew.
-       *
-       * system.text.json is case sensitive. With eeors, when you add "Barcode" you can't also have "barCode" or whatever.
-       *
-       * Desrialize w/out .net class:
-       *   Utf8JsonReader
-       *   JSON DOM
-       * {
-       *   $type: "Eeor",
-       *   foo: {
-       *     $type: "VariantList",
-       *     data: ["Foo", "Bar", "Baz"]
-       *   }
-       * }
-       *
-       *
-       *
-       */
-
-      #endregion
+      //deleted some notes about things that seem like they ought to have worked. See c6b05a8970c3c90f61e9e0f7f3372ccb8c0eee76 and before
 
       //TODO: consider using a breadth-first search to serialize the information and prevent cycles
       //TODO: as I go through the graph, can the references to previous objects be the json path instead of some id?
-      var root = ProcessEeor(test);
+      var root = EeorToJs(test);
 
       var asString = root.ToJsonString(JSO);
       Console.WriteLine(asString);
       //Can we round trip? ... Sorta. decimals get squished to doubles. all int types become ints.
-      Eeor roundTrip = ProcessJsEeor((JsonObject)JsonNode.Parse(asString, JNO));
+      Eeor roundTrip = JsToEeor((JsonObject)JsonNode.Parse(asString, JNO));
 
 
       Console.ReadKey(true);
     }
 
-    private static Eeor ProcessJsEeor(JsonObject theObject)
+    private static Eeor JsToEeor(JsonObject theObject)
     {
       var result = new Eeor();
       foreach (var kvp in theObject)
@@ -165,16 +117,16 @@ namespace BiomekToJson
             var jo = kvp.Value.AsObject();
             var theType = jo[TYPE_KEY].GetValue<string>();
             if (theType == EEOR_NAME)
-              result.Put(kvp.Key, ProcessJsEeor(jo));
+              result.Put(kvp.Key, JsToEeor(jo));
             else if (theType == VARIANT_LIST_NAME)
-              result.Put(kvp.Key, ProcessJsVariantList(jo));
+              result.Put(kvp.Key, JsToVariantList(jo));
             else if (theType == DATE_NAME)
               result.Put(kvp.Key, jo[VALUE_KEY].GetValue<DateTime>());
             else
               throw new Exception($"Unable to interpret {kvp.Key} = {kvp.Value.ToJsonString()}.");
             break;
           case JsonValueKind.Array:
-            result.Put(kvp.Key, ProcessJsArray(kvp.Value.AsArray()));
+            result.Put(kvp.Key, JsToArray(kvp.Value.AsArray()));
             break;
           default:
             throw new Exception($"{kvp.Key} error in {theObject.ToJsonString()}");
@@ -184,7 +136,7 @@ namespace BiomekToJson
      
     }
 
-    private static Array ProcessJsArray(JsonArray asArray)
+    private static Array JsToArray(JsonArray asArray)
     {
       if (!asArray.Any())
         return Array.Empty<object>();
@@ -224,10 +176,10 @@ namespace BiomekToJson
             switch (theType)
             {
               case EEOR_NAME:
-                arr.SetValue(ProcessJsEeor(jo), i);
+                arr.SetValue(JsToEeor(jo), i);
                 break;
               case VARIANT_LIST_NAME:
-                arr.SetValue(ProcessJsVariantList(jo), i);
+                arr.SetValue(JsToVariantList(jo), i);
                 break;
               case DATE_NAME:
                 arr.SetValue(jo[VALUE_KEY].GetValue<DateTime>(), i);
@@ -237,7 +189,7 @@ namespace BiomekToJson
             }
             break;
           case JsonValueKind.Array:
-            arr.SetValue(ProcessJsArray(asArray[i].AsArray()), i);
+            arr.SetValue(JsToArray(asArray[i].AsArray()), i);
             break;
           default:
             throw new ArgumentOutOfRangeException();
@@ -303,7 +255,7 @@ namespace BiomekToJson
       }
     }
 
-    private static VariantList ProcessJsVariantList(JsonObject jObjVariantList)
+    private static VariantList JsToVariantList(JsonObject jObjVariantList)
     {
       var result = new VariantList();
       foreach (var jn in jObjVariantList[VALUE_KEY].AsArray())
@@ -334,10 +286,10 @@ namespace BiomekToJson
             switch (theType)
             {
               case EEOR_NAME:
-                result.Add(ProcessJsEeor(jo));
+                result.Add(JsToEeor(jo));
                 break;
               case VARIANT_LIST_NAME:
-                result.Add(ProcessJsVariantList(jo));
+                result.Add(JsToVariantList(jo));
                 break;
               case DATE_NAME:
                 result.Add(jo[VALUE_KEY].GetValue<DateTime>());
@@ -347,7 +299,7 @@ namespace BiomekToJson
             }
             break;
           case JsonValueKind.Array:
-            result.Add(ProcessJsArray(jn.AsArray()));
+            result.Add(JsToArray(jn.AsArray()));
             break;
           default:
             throw new ArgumentOutOfRangeException();
@@ -357,7 +309,7 @@ namespace BiomekToJson
       return result;
     }
 
-    private static JsonObject ProcessEeor(Eeor eeor)
+    private static JsonObject EeorToJs(Eeor eeor)
     {
       var result = new JsonObject(JNO) { { TYPE_KEY, JsonValue.Create(EEOR_NAME, JNO) } };
 
@@ -377,7 +329,7 @@ namespace BiomekToJson
       foreach (var k in eeor.GetAllByteKeys())
         result.Add(k, JsonValue.Create(eeor.GetByte(k), JNO));
       foreach (var k in eeor.GetAllArrayKeys())
-        result.Add(k, ProcessArray(eeor.GetArray(k)));
+        result.Add(k, ArrayToJs(eeor.GetArray(k)));
       foreach (var k in eeor.GetAllComObjectKeys())
         result.Add(k, JsonValue.Create(eeor.GetComObject(k), JNO));
       foreach (var k in eeor.GetAllErrorKeys())
@@ -401,17 +353,17 @@ namespace BiomekToJson
       }
 
       foreach (var k in eeor.GetAllDictionaryKeys())
-        result.Add(k, ProcessEeor(eeor.GetDictionary(k)));
+        result.Add(k, EeorToJs(eeor.GetDictionary(k)));
 
       foreach (var k in eeor.GetAllListKeys())
       {
-        result.Add(k, ProcessList(eeor.GetList(k)));
+        result.Add(k, VariantListToJs(eeor.GetList(k)));
       }
 
       return result;
     }
 
-    private static JsonArray ProcessArray(Array arr)
+    private static JsonArray ArrayToJs(Array arr)
     {
       var result = new JsonArray(JNO);
       foreach (var item in arr)
@@ -419,13 +371,13 @@ namespace BiomekToJson
         switch (item)
         {
           case Eeor dictionary:
-            result.Add(ProcessEeor(dictionary));
+            result.Add(EeorToJs(dictionary));
             break;
           case VariantList subList:
-            result.Add(ProcessList(subList));
+            result.Add(VariantListToJs(subList));
             break;
           case Array subArray:
-            result.Add(ProcessArray(subArray));
+            result.Add(ArrayToJs(subArray));
             break;
           default:
             result.Add(JsonValue.Create(item, JNO));
@@ -436,7 +388,7 @@ namespace BiomekToJson
       return result;
     } 
 
-    private static JsonNode ProcessList(VariantList vl)
+    private static JsonNode VariantListToJs(VariantList vl)
     {
       var innerArray = new JsonArray(JNO);
       var result = new JsonObject(JNO)
@@ -449,10 +401,10 @@ namespace BiomekToJson
         switch (item)
         {
           case Eeor dictionary:
-            innerArray.Add(ProcessEeor(dictionary));
+            innerArray.Add(EeorToJs(dictionary));
             break;
           case VariantList subList:
-            innerArray.Add(ProcessList(subList));
+            innerArray.Add(VariantListToJs(subList));
             break;
           default:
             innerArray.Add(JsonValue.Create(item, JNO));
@@ -464,71 +416,8 @@ namespace BiomekToJson
     }
   }
 
-  //public class VlConverter : JsonConverter<VariantList>
-  //{
-  //  public override void WriteJson(JsonWriter writer, VariantList value, JsonSerializer serializer)
-  //  {
-  //    if (value == null)
-  //    {
-  //      writer.WriteNull();
-  //      return;
-  //    }
-
-  //    writer.WriteStartArray();
-  //    foreach (var x in value)
-  //    {
-  //      serializer.Serialize(writer, x);
-  //    }
-  //    writer.WriteEndArray();
-
-  //  }
-
-  //  public override VariantList ReadJson(JsonReader reader, Type objectType, VariantList existingValue, bool hasExistingValue,
-  //    JsonSerializer serializer)
-  //  {
-  //    throw new NotImplementedException();
-  //  }
-  //}
-
-
-  //public class EeorConverter : JsonConverter<Eeor>
-  //{
-  //  public override Eeor Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-  //  {
-  //    throw new NotImplementedException();
-  //  }
-
-  //  public override void Write(Utf8JsonWriter writer, Eeor value, JsonSerializerOptions options)
-  //  {
-  //    //if (value == null)
-  //    //{
-  //    //  writer.WriteNull()
-  //    //  return;
-  //    //}
-
-  //    writer.WriteStartObject();
-  //    foreach (var k in value.Keys)
-  //    {
-  //      //null is weird for eeors.
-  //      var v = value.Get(k);
-  //      if (v == null) //?
-  //      {
-  //        writer.WriteNull(k);
-  //      }
-  //      else
-  //      {
-  //        writer.WritePropertyName(k);
-  //        writer.
-  //        serializer.Serialize(writer, value.Get(k));
-  //      }
-  //    }
-  //    writer.WriteEndObject();
-  //  }
-  //}
-
-  /// <summary>
-  /// By default, it will serialize 413.0 as 413, which won't round trip if we don't know the type ahead of time.
-  /// </summary>
+ 
+  #region hoop-jumping to make sure doubles that happen to be integers don't get serialized as integers
   public class DoubleConverter : JsonConverter<double>
   {
     public override double Read(ref Utf8JsonReader reader, Type typeToConvert,
@@ -543,7 +432,6 @@ namespace BiomekToJson
       writer.WriteRawValue($"{value:F1}");
     }
   }
-
   public class FloatConverter : JsonConverter<float>
   {
     public override float Read(ref Utf8JsonReader reader, Type typeToConvert,
@@ -572,5 +460,6 @@ namespace BiomekToJson
       writer.WriteRawValue($"{value:F1}");
     }
   }
+  #endregion
 
 }
