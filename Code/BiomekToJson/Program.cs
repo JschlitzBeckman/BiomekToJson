@@ -36,14 +36,23 @@ namespace BiomekToJson
 
     static void Main(string[] args)
     {
-      var test = new Eeor();
+
+      var test = new Eeor() ;
       test.Put("Hello", "World!");
       test.Put("int", 413);
       test.Put("DecimalAkaCurrency", 1111m);
       test.PutDouble("double", 612.0); //TODO... looks like this would be an int on a round-trip...
       test.Put("NullValue", null);
       test.Put("now", DateTime.Now);
-      test.Put("array", new[] { 1, 2, 3, 4, 5 });
+      //test.Put("weird", new Exception("weird stuff")); This breaks, and I think that's OK
+      test.Put("arrayInt", new[] { 1, 2, 3, 4, 5 });
+      test.Put("arrayDouble", new[] { 1.0, 2.0, 3.3, 4.13, 5.0 });
+      test.Put("emptyArray", Array.Empty<object>());
+      var eo = new Eeor();
+      eo.Put("foo", "bar");
+      test.Put("eeorArray", new[] { eo, new Eeor()});
+      test.Put("arrayArray", new[] { new[]{2,3,5,7}, new []{4,6,8,9}});
+      test.Put("vlArray", new[] { new VariantList(){999}});
       test.Put("object", new Eeor());
 
       var tmp = new Eeor();
@@ -160,9 +169,9 @@ namespace BiomekToJson
             else if (theType == VARIANT_LIST_NAME)
               result.Put(kvp.Key, ProcessJsVariantList(jo));
             else if (theType == DATE_NAME)
-              result.PutDate(kvp.Key, jo[VALUE_KEY].GetValue<DateTime>());
+              result.Put(kvp.Key, jo[VALUE_KEY].GetValue<DateTime>());
             else
-              throw new Exception($"{kvp.Key} is a bad object for {theObject.ToJsonString()}");
+              throw new Exception($"Unable to interpret {kvp.Key} = {kvp.Value.ToJsonString()}.");
             break;
           case JsonValueKind.Array:
             result.Put(kvp.Key, ProcessJsArray(kvp.Value.AsArray()));
@@ -170,22 +179,9 @@ namespace BiomekToJson
           default:
             throw new Exception($"{kvp.Key} error in {theObject.ToJsonString()}");
         } 
-
-        //vivid hallucination.
-        //kvp.Value.Type switch
-        //{
-        //  JsonValueType.String => result.Put(kvp.Key, kvp.Value.GetString()),
-        //  JsonValueType.Number => result.Put(kvp.Key, kvp.Value.GetDouble()),
-        //  JsonValueType.True => result.Put(kvp.Key, true),
-        //  JsonValueType.False => result.Put(kvp.Key, false),
-        //  JsonValueType.Array => result.Put(kvp.Key, ProcessJsList((JsonArray)kvp.Value)),
-        //  JsonValueType.Object => result.Put(kvp.Key, ProcessJsEeor((JsonObject)kvp.Value)),
-        //  _ => throw new ArgumentOutOfRangeException()
-        //};  
       }
-
       return result;
-      
+     
     }
 
     private static Array ProcessJsArray(JsonArray asArray)
@@ -219,7 +215,22 @@ namespace BiomekToJson
             arr.SetValue(null, i);
             break;
           case JsonValueKind.Object:
-            arr.SetValue(ProcessJsEeor(asArray[i].AsObject()), i);
+            var jo = asArray[i].AsObject();
+            var theType = jo[TYPE_KEY].GetValue<string>();
+            switch (theType)
+            {
+              case EEOR_NAME:
+                arr.SetValue(ProcessJsEeor(jo), i);
+                break;
+              case VARIANT_LIST_NAME:
+                arr.SetValue(ProcessJsVariantList(jo), i);
+                break;
+              case DATE_NAME:
+                arr.SetValue(jo[VALUE_KEY].GetValue<DateTime>(), i);
+                break;
+              default:
+                throw new Exception($"Unable to interpret {jo.ToJsonString()} from {asArray.ToJsonString()}.");
+            }
             break;
           case JsonValueKind.Array:
             arr.SetValue(ProcessJsArray(asArray[i].AsArray()), i);
@@ -237,8 +248,20 @@ namespace BiomekToJson
       if (!asArray.Any()) return typeof(object);
 
       var theVk = asArray.First().GetValueKind();
-      if (theVk == JsonValueKind.Object || theVk == JsonValueKind.Undefined)
+      if (theVk == JsonValueKind.Undefined)
         return typeof(object);
+
+      if (theVk == JsonValueKind.Object)
+      {
+        var theType = asArray.First().AsObject()?[TYPE_KEY]?.GetValue<string>() ?? "";
+        return theType switch
+        {
+          EEOR_NAME => typeof(Eeor),
+          VARIANT_LIST_NAME => typeof(VariantList),
+          DATE_NAME => typeof(DateTime),
+          _ => typeof(object)
+        };
+      } 
 
       var isInt = false;
       if (theVk == JsonValueKind.Number)
@@ -302,7 +325,7 @@ namespace BiomekToJson
       foreach (var k in eeor.GetAllByteKeys())
         result.Add(k, JsonValue.Create(eeor.GetByte(k), JNO));
       foreach (var k in eeor.GetAllArrayKeys())
-        result.Add(k, JsonValue.Create(eeor.GetArray(k), JNO));
+        result.Add(k, ProcessArray(eeor.GetArray(k)));
       foreach (var k in eeor.GetAllComObjectKeys())
         result.Add(k, JsonValue.Create(eeor.GetComObject(k), JNO));
       foreach (var k in eeor.GetAllErrorKeys())
@@ -335,6 +358,31 @@ namespace BiomekToJson
 
       return result;
     }
+
+    private static JsonArray ProcessArray(Array arr)
+    {
+      var result = new JsonArray(JNO);
+      foreach (var item in arr)
+      {
+        switch (item)
+        {
+          case Eeor dictionary:
+            result.Add(ProcessEeor(dictionary));
+            break;
+          case VariantList subList:
+            result.Add(ProcessList(subList));
+            break;
+          case Array subArray:
+            result.Add(ProcessArray(subArray));
+            break;
+          default:
+            result.Add(JsonValue.Create(item, JNO));
+            break;
+        }
+      }
+
+      return result;
+    } 
 
     private static JsonNode ProcessList(VariantList vl)
     {
