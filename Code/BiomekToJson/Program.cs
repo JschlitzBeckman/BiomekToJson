@@ -60,11 +60,18 @@ namespace BiomekToJson
       test.Put("List", new VariantList { "Foo", 123, 45.6, tmp, null, DateTime.Today, new[]{"array", "in", "a", "list"}, new Eeor(), new VariantList(){8576309} });
       test.Put(":", ":");
 
+      //escaping path names...
+      var dot = new Eeor();
+      var dotdot = new Eeor();
+      dot.Put(".dotdot", dotdot);
+      test.Put(".dot", dot);
+
+
       //deleted some notes about things that seem like they ought to have worked. See c6b05a8970c3c90f61e9e0f7f3372ccb8c0eee76 and before
 
       //TODO: consider using a breadth-first search to serialize the information and prevent cycles
       //TODO: as I go through the graph, can the references to previous objects be the json path instead of some id?
-      var root = EeorToJs(test);
+      var root = EeorToJs(_ => { }, test);
 
       var asString = root.ToJsonString(JSO);
       Console.WriteLine(asString);
@@ -309,9 +316,10 @@ namespace BiomekToJson
       return result;
     }
 
-    private static JsonObject EeorToJs(Eeor eeor)
+    private static JsonObject EeorToJs(Action<JsonNode> adder, Eeor eeor)
     {
       var result = new JsonObject(JNO) { { TYPE_KEY, JsonValue.Create(EEOR_NAME, JNO) } };
+      adder(result);
 
       //Getting it to write a double like 612.0 is a pain. It will write 612.0 as 612, which will be read as an int.
       foreach (var k in eeor.GetAllDoubleKeys())
@@ -329,7 +337,7 @@ namespace BiomekToJson
       foreach (var k in eeor.GetAllByteKeys())
         result.Add(k, JsonValue.Create(eeor.GetByte(k), JNO));
       foreach (var k in eeor.GetAllArrayKeys())
-        result.Add(k, ArrayToJs(eeor.GetArray(k)));
+        ArrayToJs(ja => result.Add(k, ja), eeor.GetArray(k));
       foreach (var k in eeor.GetAllComObjectKeys())
         result.Add(k, JsonValue.Create(eeor.GetComObject(k), JNO));
       foreach (var k in eeor.GetAllErrorKeys())
@@ -353,31 +361,36 @@ namespace BiomekToJson
       }
 
       foreach (var k in eeor.GetAllDictionaryKeys())
-        result.Add(k, EeorToJs(eeor.GetDictionary(k)));
+      {
+        EeorToJs(jo=> result.Add(k, jo), eeor.GetDictionary(k));
+      }
 
       foreach (var k in eeor.GetAllListKeys())
       {
-        result.Add(k, VariantListToJs(eeor.GetList(k)));
+        VariantListToJs(j=>result.Add(k, j), eeor.GetList(k));
       }
+
+      result.Add("$path", result.GetPath());
 
       return result;
     }
 
-    private static JsonArray ArrayToJs(Array arr)
+    private static JsonArray ArrayToJs(Action<JsonNode> adder, Array arr)
     {
       var result = new JsonArray(JNO);
+      adder(result);
       foreach (var item in arr)
       {
         switch (item)
         {
           case Eeor dictionary:
-            result.Add(EeorToJs(dictionary));
+            EeorToJs(j=>result.Add(j), dictionary);
             break;
           case VariantList subList:
-            result.Add(VariantListToJs(subList));
+            VariantListToJs(j=>result.Add(j), subList);
             break;
           case Array subArray:
-            result.Add(ArrayToJs(subArray));
+            ArrayToJs(j=>result.Add(j), subArray);
             break;
           default:
             result.Add(JsonValue.Create(item, JNO));
@@ -388,7 +401,7 @@ namespace BiomekToJson
       return result;
     } 
 
-    private static JsonNode VariantListToJs(VariantList vl)
+    private static JsonNode VariantListToJs(Action<JsonNode> adder, VariantList vl)
     {
       var innerArray = new JsonArray(JNO);
       var result = new JsonObject(JNO)
@@ -396,21 +409,23 @@ namespace BiomekToJson
         { TYPE_KEY, JsonValue.Create(VARIANT_LIST_NAME, JNO) },
         { VALUE_KEY, innerArray }
       };
+      adder(result);
       foreach (var item in vl)
       {
         switch (item)
         {
           case Eeor dictionary:
-            innerArray.Add(EeorToJs(dictionary));
+            EeorToJs(jo=>innerArray.Add(jo), dictionary);
             break;
           case VariantList subList:
-            innerArray.Add(VariantListToJs(subList));
+            VariantListToJs(j=>innerArray.Add(j), subList);
             break;
           default:
             innerArray.Add(JsonValue.Create(item, JNO));
             break;
         }
       }
+      result.Add("$path", result.GetPath());
 
       return result;
     }
