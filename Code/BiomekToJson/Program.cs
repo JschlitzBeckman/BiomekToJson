@@ -7,8 +7,11 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using System.Text.RegularExpressions;
 using System.Xml;
+using Othros;
 using OthrosCommonLib;
+using VariantList = OthrosNet.VariantList;
 
 namespace BiomekToJson
 {
@@ -20,11 +23,14 @@ namespace BiomekToJson
     private const string VARIANT_LIST_NAME = "VariantList";
     private const string DATE_NAME = "Date";
 
+    private static Dictionary<object, string> SeenObjects = new Dictionary<object, string>();
+
     private static readonly JsonSerializerOptions JSO = new JsonSerializerOptions
     {
       ReadCommentHandling = JsonCommentHandling.Skip,
       PropertyNameCaseInsensitive = true,
       WriteIndented = true,
+      
       ReferenceHandler = ReferenceHandler.Preserve,
       TypeInfoResolver = new DefaultJsonTypeInfoResolver(),
       Converters = { new DoubleConverter(), new FloatConverter(), new DecimalConverter() }
@@ -37,6 +43,26 @@ namespace BiomekToJson
 
     static void Main(string[] args)
     {
+      Eeor e;
+      VariantList vl;
+
+      
+      //var anyDots = new[] { "gumby cat",".jenny", "a.n.y.", "dots.", "(\\ '`*+?|{[()^$.#"};
+      //foreach (var s in anyDots)
+      //  Console.Write($"'{s}', ");
+      //Console.WriteLine();
+      //var joined = string.Join(".", anyDots.Select(Regex.Escape));
+      //Console.WriteLine(joined);
+      //var splitter = new Regex(@"(?<!\\)\.",RegexOptions.Compiled);
+      //var split = splitter.Split(joined);
+      //foreach (var s in split)
+      //  Console.Write($"'{s}', ");
+      //Console.WriteLine();
+      //foreach (var s in split.Select(Regex.Unescape))
+      //  Console.Write($"'{s}', ");
+      //Console.WriteLine();
+
+      Console.WriteLine("----------------------------------------------");
       var test = new Eeor() ;
       test.Put("Hello", "World!");
       test.Put("int", 413);
@@ -63,15 +89,17 @@ namespace BiomekToJson
       //escaping path names...
       var dot = new Eeor();
       var dotdot = new Eeor();
-      dot.Put(".dotdot", dotdot);
+      dot.Put(".dot']dot", dotdot);
       test.Put(".dot", dot);
-
 
       //deleted some notes about things that seem like they ought to have worked. See c6b05a8970c3c90f61e9e0f7f3372ccb8c0eee76 and before
 
       //TODO: consider using a breadth-first search to serialize the information and prevent cycles
       //TODO: as I go through the graph, can the references to previous objects be the json path instead of some id?
-      var root = EeorToJs(_ => { }, test);
+
+      var root = GetEmptyEeorJson();
+
+      PopulateJsonFromEeor(test, "$", root);
 
       var asString = root.ToJsonString(JSO);
       Console.WriteLine(asString);
@@ -80,6 +108,16 @@ namespace BiomekToJson
 
 
       Console.ReadKey(true);
+    }
+    private static JsonObject GetEmptyEeorJson() => new JsonObject(JNO) { { TYPE_KEY, JsonValue.Create(EEOR_NAME, JNO) } };
+
+    private static JsonObject GetEmptyVariantListJson()
+    {
+      return new JsonObject(JNO)
+      {
+        { TYPE_KEY, JsonValue.Create(VARIANT_LIST_NAME, JNO) },
+        { VALUE_KEY, new JsonArray(JNO)}
+      };
     }
 
     private static Eeor JsToEeor(JsonObject theObject)
@@ -316,119 +354,154 @@ namespace BiomekToJson
       return result;
     }
 
-    private static JsonObject EeorToJs(Action<JsonNode> adder, Eeor eeor)
+    private static Action<string, JsonNode> JaAdder(JsonArray ja) => (_, value) => ja.Add(value);
+    private static Action<string, JsonNode> JoAdder(JsonObject jo) => jo.Add;
+    private static void PopulateJsonFromEeor(Eeor source, string sourcePath, JsonObject target)
     {
-      var result = new JsonObject(JNO) { { TYPE_KEY, JsonValue.Create(EEOR_NAME, JNO) } };
-      adder(result);
+      Console.WriteLine(sourcePath);
 
       //Getting it to write a double like 612.0 is a pain. It will write 612.0 as 612, which will be read as an int.
-      foreach (var k in eeor.GetAllDoubleKeys())
-        result.Add(k, JsonValue.Create<double>(eeor.GetDouble(k), JNO));
-      foreach (var k in eeor.GetAllCurrencyKeys())
-        result.Add(k, JsonValue.Create<decimal>(eeor.GetCurrency(k), JNO));
-      foreach (var k in eeor.GetAllFloatKeys())
-        result.Add(k, JsonValue.Create<float>(eeor.GetFloat(k), JNO));
-      foreach (var k in eeor.GetAllIntegerKeys())
-        result.Add(k, JsonValue.Create(eeor.GetInt(k), JNO));
-      foreach (var k in eeor.GetAllShortKeys())
-        result.Add(k, JsonValue.Create(eeor.GetShort(k), JNO));
-      foreach (var k in eeor.GetAllBooleanKeys())
-        result.Add(k, JsonValue.Create(eeor.GetBool(k), JNO));
-      foreach (var k in eeor.GetAllByteKeys())
-        result.Add(k, JsonValue.Create(eeor.GetByte(k), JNO));
-      foreach (var k in eeor.GetAllArrayKeys())
-        ArrayToJs(ja => result.Add(k, ja), eeor.GetArray(k));
-      foreach (var k in eeor.GetAllComObjectKeys())
-        result.Add(k, JsonValue.Create(eeor.GetComObject(k), JNO));
-      foreach (var k in eeor.GetAllErrorKeys())
-        result.Add(k, JsonValue.Create(eeor.GetError(k), JNO));
-      foreach (var k in eeor.GetAllStringKeys())
-        result.Add(k, JsonValue.Create(eeor.GetString(k), JNO));
-
-      foreach (var k in eeor.GetAllNullKeys())
-        result.Add(k, null);
-      foreach (var k in eeor.GetAllEmptyKeys())
-        result.Add(k, null);
-
-      foreach (var k in eeor.GetAllDateKeys())
+      foreach (var k in source.GetAllDoubleKeys())
+        target.Add(k, JsonValue.Create<double>(source.GetDouble(k), JNO));
+      foreach (var k in source.GetAllCurrencyKeys())
+        target.Add(k, JsonValue.Create<decimal>(source.GetCurrency(k), JNO));
+      foreach (var k in source.GetAllFloatKeys())
+        target.Add(k, JsonValue.Create<float>(source.GetFloat(k), JNO));
+      foreach (var k in source.GetAllIntegerKeys())
+        target.Add(k, JsonValue.Create(source.GetInt(k), JNO));
+      foreach (var k in source.GetAllShortKeys())
+        target.Add(k, JsonValue.Create(source.GetShort(k), JNO));
+      foreach (var k in source.GetAllBooleanKeys())
+        target.Add(k, JsonValue.Create(source.GetBool(k), JNO));
+      foreach (var k in source.GetAllByteKeys())
+        target.Add(k, JsonValue.Create(source.GetByte(k), JNO));
+      foreach (var k in source.GetAllComObjectKeys())
+        target.Add(k, JsonValue.Create(source.GetComObject(k), JNO));
+      foreach (var k in source.GetAllErrorKeys())
+        target.Add(k, JsonValue.Create(source.GetError(k), JNO));
+      foreach (var k in source.GetAllStringKeys())
+        target.Add(k, JsonValue.Create(source.GetString(k), JNO));
+      foreach (var k in source.GetAllNullKeys())
+        target.Add(k, null);
+      foreach (var k in source.GetAllEmptyKeys())
+        target.Add(k, null);
+      foreach (var k in source.GetAllDateKeys())
       {
         var dateObject = new JsonObject(JNO)
         {
           { TYPE_KEY, JsonValue.Create(DATE_NAME, JNO) },
-          { VALUE_KEY, JsonValue.Create(eeor.GetDate(k), JNO) }
+          { VALUE_KEY, JsonValue.Create(source.GetDate(k), JNO) }
         };
-        result.Add(k, dateObject);
+        target.Add(k, dateObject);
       }
 
-      foreach (var k in eeor.GetAllDictionaryKeys())
+      foreach (var k in source.GetAllArrayKeys())
       {
-        EeorToJs(jo=> result.Add(k, jo), eeor.GetDictionary(k));
+        var path = PathAdd(sourcePath , k);
+        var subItem = new JsonArray(JNO);
+        target.Add(k, subItem);
+        PopulateJsonFromArray(source.GetArray(k), path, subItem);
       }
 
-      foreach (var k in eeor.GetAllListKeys())
+      foreach (var k in source.GetAllDictionaryKeys())
       {
-        VariantListToJs(j=>result.Add(k, j), eeor.GetList(k));
+        var path = PathAdd(sourcePath, k);
+        var subItem = GetEmptyEeorJson();
+        target.Add(k, subItem);
+        PopulateJsonFromEeor(source.GetDictionary(k), path, subItem);
       }
 
-      result.Add("$path", result.GetPath());
+      foreach (var k in source.GetAllListKeys())
+      {
+        var path = PathAdd(sourcePath, k);
+        var subItem = GetEmptyVariantListJson();
+        PopulateJsonFromVariantList(source.GetList(k), path, subItem);
+      }
 
-      return result;
+      //target.Add("$path", path);
     }
 
-    private static JsonArray ArrayToJs(Action<JsonNode> adder, Array arr)
+    private static string PathAdd(string sourcePath, string key) => sourcePath + "." + Regex.Escape(key);
+
+    private static void PopulateJsonFromArray(Array source, string sourcePath, JsonArray target)
     {
-      var result = new JsonArray(JNO);
-      adder(result);
-      foreach (var item in arr)
+      Console.WriteLine(sourcePath);
+
+      var index = 0;
+      foreach (var item in source)
       {
+        var path = PathAdd(sourcePath, index.ToString());
         switch (item)
         {
           case Eeor dictionary:
-            EeorToJs(j=>result.Add(j), dictionary);
+            var targetObj = GetEmptyEeorJson();
+            target.Add(targetObj);
+            PopulateJsonFromEeor(dictionary, path, targetObj);
             break;
           case VariantList subList:
-            VariantListToJs(j=>result.Add(j), subList);
+            var targetList = GetEmptyVariantListJson();
+            target.Add(targetList);
+            PopulateJsonFromVariantList(subList, path, targetList);
             break;
           case Array subArray:
-            ArrayToJs(j=>result.Add(j), subArray);
+            var targetArr = new JsonArray(JNO);
+            target.Add(targetArr);
+            PopulateJsonFromArray(subArray, path, targetArr);
+            break;
+          case null:
+            target.Add(null);
             break;
           default:
-            result.Add(JsonValue.Create(item, JNO));
+            target.Add(JsonValue.Create(item, JNO));
             break;
         }
-      }
 
-      return result;
+        index++;
+      }
     } 
 
-    private static JsonNode VariantListToJs(Action<JsonNode> adder, VariantList vl)
+    private static void PopulateJsonFromVariantList(IVariantList source, string sourcePath, JsonObject target)
     {
-      var innerArray = new JsonArray(JNO);
-      var result = new JsonObject(JNO)
+      Console.WriteLine(sourcePath);
+
+      var innerArray = target[VALUE_KEY]!.AsArray();
+      for (var index = 0; index < source.Count; index++)
       {
-        { TYPE_KEY, JsonValue.Create(VARIANT_LIST_NAME, JNO) },
-        { VALUE_KEY, innerArray }
-      };
-      adder(result);
-      foreach (var item in vl)
-      {
+        var item = source[index];
+        var path = PathAdd(sourcePath, index.ToString());
         switch (item)
         {
           case Eeor dictionary:
-            EeorToJs(jo=>innerArray.Add(jo), dictionary);
+            var subDict = GetEmptyEeorJson();
+            innerArray.Add(subDict);
+            PopulateJsonFromEeor(dictionary, path, subDict);
             break;
           case VariantList subList:
-            VariantListToJs(j=>innerArray.Add(j), subList);
+            var subItem = GetEmptyVariantListJson();
+            innerArray.Add(subItem);
+            PopulateJsonFromVariantList(subList, path, subItem);
+            break;
+          case Array subArray:
+            var targetArr = new JsonArray(JNO);
+            innerArray.Add(targetArr);
+            PopulateJsonFromArray(subArray, path, targetArr);
+            break;
+          case null:
+            innerArray.Add(null);
             break;
           default:
-            innerArray.Add(JsonValue.Create(item, JNO));
+            innerArray.Add<JsonValue>(JsonValue.Create(item, JNO));
             break;
         }
       }
-      result.Add("$path", result.GetPath());
-
-      return result;
     }
+
+    private static void AddThing(VariantList vParent, JsonObject jParent, string itemName, JsonNode item)
+    {}
+    private static void AddThing(Eeor vParent, JsonObject jParent, string itemName, JsonNode item)
+    {}
+    private static void AddThing(Array vParent, JsonArray jParent, string itemName, JsonNode item)
+    {}
   }
 
  
