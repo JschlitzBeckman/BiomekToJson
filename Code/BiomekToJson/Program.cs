@@ -20,6 +20,7 @@ namespace BiomekToJson
     private const string TYPE_KEY = "$type";
     private const string VALUE_KEY = "$value";
     private const string EEOR_NAME = "Eeor";
+    private const string REFERENCE_NAME = "Reference";
     private const string VARIANT_LIST_NAME = "VariantList";
     private const string DATE_NAME = "Date";
 
@@ -92,6 +93,8 @@ namespace BiomekToJson
       dot.Put(".dot']dot", dotdot);
       test.Put(".dot", dot);
 
+      test.Put("Circular", test);
+
       //deleted some notes about things that seem like they ought to have worked. See c6b05a8970c3c90f61e9e0f7f3372ccb8c0eee76 and before
 
       //TODO: consider using a breadth-first search to serialize the information and prevent cycles
@@ -99,6 +102,7 @@ namespace BiomekToJson
 
       var root = GetEmptyEeorJson();
 
+      SeenObjects.Add(test, "$");
       PopulateJsonFromEeor(test, "$", root);
 
       var asString = root.ToJsonString(JSO);
@@ -117,6 +121,14 @@ namespace BiomekToJson
       {
         { TYPE_KEY, JsonValue.Create(VARIANT_LIST_NAME, JNO) },
         { VALUE_KEY, new JsonArray(JNO)}
+      };
+    }
+    private static JsonObject MakeReference(string path)
+    {
+      return new JsonObject(JNO)
+      {
+        { TYPE_KEY, JsonValue.Create(REFERENCE_NAME, JNO) }, 
+        {VALUE_KEY, JsonValue.Create(path)}
       };
     }
 
@@ -395,20 +407,20 @@ namespace BiomekToJson
         target.Add(k, dateObject);
       }
 
-      foreach (var k in source.GetAllArrayKeys())
-      {
-        var path = PathAdd(sourcePath , k);
-        var subItem = new JsonArray(JNO);
-        target.Add(k, subItem);
-        PopulateJsonFromArray(source.GetArray(k), path, subItem);
-      }
-
       foreach (var k in source.GetAllDictionaryKeys())
       {
-        var path = PathAdd(sourcePath, k);
-        var subItem = GetEmptyEeorJson();
-        target.Add(k, subItem);
-        PopulateJsonFromEeor(source.GetDictionary(k), path, subItem);
+        var item = source.GetDictionary(k);
+        if (SeenObjects.ContainsKey(item))
+        {
+          target.Add(k, MakeReference(SeenObjects[item]));
+        }
+        else
+        {
+          var path = PathAdd(sourcePath, k);
+          var subItem = GetEmptyEeorJson();
+          target.Add(k, subItem);
+          PopulateJsonFromEeor(item, path, subItem);
+        }
       }
 
       foreach (var k in source.GetAllListKeys())
@@ -418,8 +430,17 @@ namespace BiomekToJson
         PopulateJsonFromVariantList(source.GetList(k), path, subItem);
       }
 
+      foreach (var k in source.GetAllArrayKeys())
+      {
+        var path = PathAdd(sourcePath , k);
+        var subItem = new JsonArray(JNO);
+        target.Add(k, subItem);
+        PopulateJsonFromArray(source.GetArray(k), path, subItem);
+      }
+
       //target.Add("$path", path);
     }
+
 
     private static string PathAdd(string sourcePath, string key) => sourcePath + "." + Regex.Escape(key);
 
