@@ -10,8 +10,8 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using OthrosNet;
 using Othros;
-using OthrosCommonLib;
-using VariantList = OthrosNet.VariantList;
+//using OthrosCommonLib;
+//using VariantList = OthrosNet.VariantList;
 
 namespace BiomekToJson
 {
@@ -52,7 +52,7 @@ namespace BiomekToJson
       Eeor e;
       VariantList vl;
 
-      
+
       //var anyDots = new[] { "gumby cat",".jenny", "a.n.y.", "dots.", "(\\ '`*+?|{[()^$.#"};
       //foreach (var s in anyDots)
       //  Console.Write($"'{s}', ");
@@ -67,6 +67,9 @@ namespace BiomekToJson
       //foreach (var s in split.Select(Regex.Unescape))
       //  Console.Write($"'{s}', ");
       //Console.WriteLine();
+
+      var vll = new VariantList();
+      vll.Add(123);
 
       Console.WriteLine("----------------------------------------------");
       var test = new Eeor() ;
@@ -85,12 +88,12 @@ namespace BiomekToJson
       eo.Put("foo", "bar");
       test.Put("eeorArray", new[] { eo, new Eeor()});
       test.Put("arrayArray", new[] { new[]{2,3,5,7}, new []{4,6,8,9}});
-      test.Put("vlArray", new[] { new VariantList(){999}});
+      test.Put("vlArray", new[] { MakeList (999)});
       test.Put("object", new Eeor());
 
       var tmp = new Eeor();
       tmp.Put("Wibble", "Wobble");
-      test.Put("List", new VariantList { "Foo", 123, 45.6, tmp, null, DateTime.Today, new[]{"array", "in", "a", "list"}, new Eeor(), new VariantList(){8576309} });
+      test.Put("List", MakeList( "Foo", 123, 45.6, tmp, null, DateTime.Today, new[]{"array", "in", "a", "list"}, new Eeor(), MakeList(8576309) ));
       test.Put(":", ":");
 
       //escaping path names...
@@ -118,6 +121,16 @@ namespace BiomekToJson
       Eeor roundTrip = JsToEeor((JsonObject)JsonNode.Parse(asString, JNO));
 
       Console.ReadKey(true);
+    }
+
+    private static VariantList MakeList(params object[] items)
+    {
+      var result = new VariantList();
+      foreach (var item in items)
+      {
+        result.Add(item);
+      }
+      return result;
     }
 
     private static JsonObject GetEmptyEeorJson() => new JsonObject(JNO) { { TYPE_KEY, JsonValue.Create(EEOR_NAME, JNO) } };
@@ -493,7 +506,7 @@ namespace BiomekToJson
       }
     } 
 
-    private static void PopulateJsonFromVariantList(IVariantList source, string sourcePath, JsonObject target)
+    private static void PopulateJsonFromVariantList(VariantList source, string sourcePath, JsonObject target)
     {
       Console.WriteLine(sourcePath);
 
