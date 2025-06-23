@@ -1,5 +1,4 @@
-﻿using OthrosNet;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -9,6 +8,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
 using System.Xml;
+using OthrosNet;
 using Othros;
 using OthrosCommonLib;
 using VariantList = OthrosNet.VariantList;
@@ -31,10 +31,15 @@ namespace BiomekToJson
       ReadCommentHandling = JsonCommentHandling.Skip,
       PropertyNameCaseInsensitive = true,
       WriteIndented = true,
+      NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
+
+      MaxDepth = 512,
       
       ReferenceHandler = ReferenceHandler.Preserve,
-      TypeInfoResolver = new DefaultJsonTypeInfoResolver(),
-      Converters = { new DoubleConverter(), new FloatConverter(), new DecimalConverter() }
+      TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+
+      //Converters = { new DoubleConverter(), new FloatConverter(), new DecimalConverter()      }
+
     };
 
     private static readonly JsonNodeOptions JNO = new JsonNodeOptions() { PropertyNameCaseInsensitive = true };
@@ -67,6 +72,7 @@ namespace BiomekToJson
       var test = new Eeor() ;
       test.Put("Hello", "World!");
       test.Put("int", 413);
+      test.Put("nan", Double.NaN);
       test.Put("DecimalAkaCurrency", 1111m);
       test.PutDouble("double", 612.0); //TODO... looks like this would be an int on a round-trip...
       test.Put("NullValue", null);
@@ -93,7 +99,7 @@ namespace BiomekToJson
       dot.Put(".dot']dot", dotdot);
       test.Put(".dot", dot);
 
-      test.Put("Circular", test);
+//TODO      test.Put("Circular", test);
 
       //deleted some notes about things that seem like they ought to have worked. See c6b05a8970c3c90f61e9e0f7f3372ccb8c0eee76 and before
 
@@ -108,11 +114,12 @@ namespace BiomekToJson
       var asString = root.ToJsonString(JSO);
       Console.WriteLine(asString);
       //Can we round trip? ... Sorta. decimals get squished to doubles. all int types become ints.
+      //TODO: circular references are a problem
       Eeor roundTrip = JsToEeor((JsonObject)JsonNode.Parse(asString, JNO));
-
 
       Console.ReadKey(true);
     }
+
     private static JsonObject GetEmptyEeorJson() => new JsonObject(JNO) { { TYPE_KEY, JsonValue.Create(EEOR_NAME, JNO) } };
 
     private static JsonObject GetEmptyVariantListJson()
@@ -123,6 +130,7 @@ namespace BiomekToJson
         { VALUE_KEY, new JsonArray(JNO)}
       };
     }
+
     private static JsonObject MakeReference(string path)
     {
       return new JsonObject(JNO)
@@ -132,9 +140,11 @@ namespace BiomekToJson
       };
     }
 
-    private static Eeor JsToEeor(JsonObject theObject)
+    private static Eeor JsToEeor(JsonObject theObject, Eeor root=null)
     {
       var result = new Eeor();
+      if (root == null)
+        root = result;
       foreach (var kvp in theObject)
       {
         if (kvp.Key == TYPE_KEY) continue;
@@ -179,6 +189,8 @@ namespace BiomekToJson
               result.Put(kvp.Key, JsToVariantList(jo));
             else if (theType == DATE_NAME)
               result.Put(kvp.Key, jo[VALUE_KEY].GetValue<DateTime>());
+            //else if (theType == REFERENCE_NAME)
+            //  result.Put(kvp.Key, ...);//TODO all of this.
             else
               throw new Exception($"Unable to interpret {kvp.Key} = {kvp.Value.ToJsonString()}.");
             break;
