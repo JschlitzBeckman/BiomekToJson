@@ -8,10 +8,15 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
 using System.Xml;
+
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+
 using OthrosNet;
-using Othros;
-//using OthrosCommonLib;
-//using VariantList = OthrosNet.VariantList;
+//using Othros;
+using VariantList = OthrosNet.VariantList;
+using IEEOR = OthrosNet.IEEOR;
+using World;
 
 namespace BiomekToJson
 {
@@ -36,9 +41,9 @@ namespace BiomekToJson
       MaxDepth = 512,
       
       ReferenceHandler = ReferenceHandler.Preserve,
-      TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+      TypeInfoResolver = new DefaultJsonTypeInfoResolver(),
 
-      //Converters = { new DoubleConverter(), new FloatConverter(), new DecimalConverter()      }
+      Converters = { new DoubleConverter(), new FloatConverter(), new DecimalConverter()      }
 
     };
 
@@ -72,10 +77,12 @@ namespace BiomekToJson
       vll.Add(123);
 
       Console.WriteLine("----------------------------------------------");
-      var test = new Eeor() ;
+      var test = new Eeor();
+      
+
       test.Put("Hello", "World!");
       test.Put("int", 413);
-      test.Put("nan", Double.NaN);
+      //test.Put("nan", Double.NaN);
       test.Put("DecimalAkaCurrency", 1111m);
       test.PutDouble("double", 612.0); //TODO... looks like this would be an int on a round-trip...
       test.Put("NullValue", null);
@@ -108,7 +115,7 @@ namespace BiomekToJson
 
       //TODO: consider using a breadth-first search to serialize the information and prevent cycles
       //TODO: as I go through the graph, can the references to previous objects be the json path instead of some id?
-
+      
       var root = GetEmptyEeorJson();
 
       SeenObjects.Add(test, "$");
@@ -120,6 +127,30 @@ namespace BiomekToJson
       //TODO: circular references are a problem
       Eeor roundTrip = JsToEeor((JsonObject)JsonNode.Parse(asString, JNO));
 
+      var  d = 42D;
+      //This will round-trip with the special Converters...
+      d = roundTrip.GetDouble("double");
+      Console.WriteLine($"double == {d}");
+      //And this as a string
+      //d = roundTrip.GetDouble("nan");
+      //Console.WriteLine($"nan == {d}");
+
+
+      Console.WriteLine("-------- aggregate test --------");
+      //IEEOR aggTest = (IEEOR)(new Eeor ());
+      //aggTest.AggregateClassName = "Biomek5.Labware"; //Fails with: Class does not support aggregation (or class object is remote) (0x80040110 (CLASS_E_NOAGGREGATION))
+      ILabware lw = new World.Labware();
+      //lw.ConfigureWellAmount(1, 41.3);nope
+      //Console.WriteLine($"{lw.GetWellAmount(1)}"); Yeah, it seems toucing anything on ILabware assumes a working biomek environment
+      var asIEeor = (IEEOR)lw;
+      //Eeor eee = (Eeor)asIEeor; No
+      //Eeor eee = asIEeor as Eeor;  Also no
+      eee.PutBool("Known", false);
+
+      Console.WriteLine(asIEeor.AggregateClassName);
+
+
+      
       Console.ReadKey(true);
     }
 
